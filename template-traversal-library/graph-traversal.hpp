@@ -212,16 +212,15 @@ namespace trav
         };
 
         template<traversal kind, direction dir = FORWARD>
-        walker<kind, dir> walk(_In_ std::initializer_list<size_t> roots)
-        {
-            return walker<kind, dir>(*this, roots);
-        }
-
-        template<traversal kind, direction dir = FORWARD>
         walker<kind, dir> walk(_In_ size_t root)
         {
-            return walker<kind, dir>(*this, { root });
+            return walker<kind, dir>(*this, root);
         }
+
+        auto walk_bfs  (_In_ size_t root) { return walk<BREADTH_FIRST, FORWARD >(root); }
+        auto walk_bfs_r(_In_ size_t root) { return walk<BREADTH_FIRST, BACKWARD>(root); }
+        auto walk_dfs  (_In_ size_t root) { return walk<  DEPTH_FIRST, FORWARD >(root); }
+        auto walk_dfs_r(_In_ size_t root) { return walk<  DEPTH_FIRST, BACKWARD>(root); }
 
     protected:
         std::vector<vert *> verts;
