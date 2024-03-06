@@ -2,6 +2,7 @@
 #include <type_traits>
 #include <cassert>
 #include <queue>
+#include <stack>
 #include <vector>
 #include <functional>
 #include <tuple>
@@ -12,7 +13,8 @@
 // graph traversal
 namespace trav
 {
-    template<class _Ty> concept non_void = !std::is_void_v<_Ty>;
+    template<class _Ty>
+    concept non_void = !std::is_void_v<_Ty>;
 
     template<class _VTy>
     class vert
@@ -193,72 +195,154 @@ namespace trav
                 return nullptr;
             }
 
-            template<traversal kind, direction dir>
-            class walk
+        private:
+            class _walk
             {
+            public:
+                auto begin( ) const { return steps.begin( ); }
+                auto end  ( ) const { return steps.end  ( ); }
+
+            protected:
+                void _push_step(
+                    _In_opt_ edge *e,
+                    _In_     vert *v
+                )
+                {
+                    steps.push_back({ e, *v });
+                }
+
+            private:
+                std::vector<std::tuple<edge *, vert &>> steps;
+            };
+
+        public:
+            template<traversal kind, direction dir> class walk;
+
+            // see https://en.wikipedia.org/wiki/Breadth-first_search
+            // (skips 7 and 8 because there is no goal)
+            // (skips 12 because parents are already known)
+            //  1  procedure BFS(G, root) is
+            //  2      let Q be a queue
+            //  3      label root as explored
+            //  4      Q.enqueue(root)
+            //  5      while Q is not empty do
+            //  6          v := Q.dequeue()
+            //  9          for all edges from v to w in G.adjacentEdges(v) do
+            // 10              if w is not labeled as explored then
+            // 11                  label w as explored
+            // 13                  Q.enqueue(w)
+            template<direction dir>
+            class walk<traversal::BREADTH_FIRST, dir>
+                : public _walk
+            {
+                static constexpr bool is_traversal_forward = dir == direction::FORWARD;
+
+            public:
+                // 1  procedure BFS(G, root) is
+                walk(
+                    _In_ _graph_base &g,
+                    _In_ std::initializer_list<size_t> rootIndices
+                )
+                {
+                    // 2  let Q be a queue
+                    std::queue<size_t> q;
+                    std::vector<bool> visited(g.verts.size( ), false);
+
+                    // All roots at breadth 0
+                    for (size_t rootIndex : rootIndices)
+                    {
+                        // 3  label root as explored
+                        visited[rootIndex] = true;
+
+                        // 4  Q.enqueue(root)
+                        q.push(rootIndex);
+                        this->_push_step(nullptr, g.verts[rootIndex]);
+                    }
+
+                    // 5  while Q is not empty do
+                    while (!q.empty( ))
+                    {
+                        // 6  v := Q.dequeue()
+                        const size_t vIndex = q.front( );
+                        const vert *const v = g.verts[vIndex];
+                        q.pop( );
+
+                        // 9  for all edges from v to w in G.adjacentEdges(v) do
+                        for (const size_t eIndex : (is_traversal_forward ? v->next( ) : v->prev( )))
+                        {
+                            edge *const e = g.edges[eIndex];
+                            const size_t wIndex = (is_traversal_forward ? e->next( ) : e->prev( ));
+
+                            // 10  if w is not labeled as explored then
+                            if (!visited[wIndex])
+                            {
+                                // 11  label w as explored
+                                visited[wIndex] = true;
+
+                                // 13  Q.enqueue(w)
+                                q.push(wIndex);
+                                this->_push_step(e, g.verts[wIndex]);
+                            }
+                        }
+                    }
+                }
+            };
+
+            // see https://en.wikipedia.org/wiki/Depth-first_search
+            // 1  procedure DFS(G, v) is
+            // 2  label v as discovered
+            // 3      for all directed edges from v to w that are in G.adjacentEdges(v) do
+            // 4          if vertex w is not labeled as discovered then
+            // 5              recursively call DFS(G, w)
+            template<direction dir>
+            class walk<traversal::DEPTH_FIRST, dir>
+                : public _walk
+            {
+                static constexpr bool is_traversal_forward = dir == direction::FORWARD;
+
+            private:
+                // 1  procedure DFS_iterative(G, v) is
+                void _walk_util(
+                    _In_ _graph_base &g,
+                    _Inout_ std::vector<bool> &visited,
+                    _In_opt_ edge *eTaken,
+                    _In_ size_t vIndex)
+                {
+                    vert *const v = g.verts[vIndex];
+
+                    // 2  label v as discovered
+                    visited[vIndex] = true;
+                    this->_push_step(eTaken, g.verts[vIndex]);
+
+                    // 3  for all directed edges from v to w that are in G.adjacentEdges(v) do
+                    for (const size_t eIndex : (is_traversal_forward ? v->next( ) : v->prev( )))
+                    {
+                        edge *const e = g.edges[eIndex];
+                        const size_t wIndex = (is_traversal_forward ? e->next( ) : e->prev( ));
+
+                        // 4  if vertex w is not labeled as discovered then
+                        if (!visited[wIndex])
+                        {
+                            // 5  recursively call DFS(G, w)
+                            _walk_util(g, visited, e, wIndex);
+                        }
+                    }
+
+                }
+
             public:
                 walk(
                     _In_ _graph_base &g,
                     _In_ std::initializer_list<size_t> rootIndices
                 )
-                    : g(g)
                 {
-                    std::queue<size_t> q;
                     std::vector<bool> visited(g.verts.size( ), false);
 
-                    auto _visit = [&](
-                        _In_vector_index_(g.verts) size_t vIndex,
-                        _In_opt_ edge *e
-                        )
+                    for (const size_t rootIndex : rootIndices)
                     {
-                        visited[vIndex] = true;
-                        q.push(vIndex);
-                        _push_to_walk(e, g.verts[vIndex]);
-                    };
-
-                    for (size_t rootIndex : rootIndices)
-                    {
-                        _visit(rootIndex, nullptr);
-                    }
-
-                    constexpr bool is_traversal_forward = dir == direction::FORWARD;
-
-                    while (!q.empty( ))
-                    {
-                        const size_t vIndex = q.front( );
-                        const vert *v = g.verts[vIndex];
-                        q.pop( );
-
-                        if constexpr (kind == traversal::BREADTH_FIRST)
-                        {
-                            for (const size_t eIndex : (is_traversal_forward ? v->next( ) : v->prev( )))
-                            {
-                                edge *e = g.edges[eIndex];
-                                const size_t wIndex = (is_traversal_forward ? e->next( ) : e->prev( ));
-
-                                if (!visited[wIndex])
-                                {
-                                    _visit(wIndex, e);
-                                }
-                            }
-                        }
+                        _walk_util(g, visited, nullptr, rootIndex);
                     }
                 }
-
-                auto begin( ) const { return _walk.begin( ); }
-                auto end  ( ) const { return _walk.end  ( ); }
-
-            private:
-                void _push_to_walk(
-                    _In_opt_ edge *e,
-                    _In_     vert *v
-                )
-                {
-                    _walk.push_back({ e, *v });
-                }
-
-                _graph_base &g;
-                std::vector<std::tuple<edge *, vert &>> _walk;
             };
 
             auto walk_bfs  (_In_ std::initializer_list<size_t> roots) { return walk<traversal::BREADTH_FIRST, direction:: FORWARD>(*this, roots); }
