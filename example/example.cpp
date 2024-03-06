@@ -5,18 +5,22 @@ using namespace trav;
 
 int main()
 {
-	graph<const char*, const char *> graph;
+	graph<const char*, const char*> graph;
 	graph.push("Hello");
-	graph.push("World!");
-	graph.link(0, 1, ", ");
+	graph.push("big");
+	graph.link(0, 1, " ");
+	graph.push("cool");
+	graph.link(0, 2, " ");
+	graph.push("world");
+	graph.link(1, 3, " ");
+	graph.link(2, 3, " ");
 
 	// Forward first
 	// "Hello, World!"
 
-	for (auto [v,e] : graph.walk<BREADTH_FIRST>(0))
+	for (auto &[e, v] : graph.walk<BREADTH_FIRST>(0))
 	{
-		if (e) std::cout << **e;
-		if (v) std::cout << **v;
+		std::cout << (e ? *e : "") << v;
 	}
 
 	std::cout << '\n';
@@ -24,10 +28,9 @@ int main()
 	// Backward second
 	// "World!, Hello"
 
-	for (auto [v, e] : graph.walk<BREADTH_FIRST, BACKWARD>(1))
+	for (auto &[e, v] : graph.walk<BREADTH_FIRST, BACKWARD>(3))
 	{
-		if (e) std::cout << **e;
-		if (v) std::cout << **v;
+		std::cout << (e ? *e : "") << v;
 	}
 
 	std::cout << '\n';

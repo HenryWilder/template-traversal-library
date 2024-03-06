@@ -7,6 +7,7 @@
 #include <vector>
 #include <functional>
 #include <tuple>
+#include <optional>
 
 // graph traversal
 namespace trav
@@ -28,22 +29,13 @@ namespace trav
             return index;
         }
 
-        _VTy &operator*( )
+        operator _VTy &( )
         {
             return data;
         }
-        const _VTy &operator*( ) const
+        operator const _VTy &( ) const
         {
             return data;
-        }
-
-        _VTy *operator->( )
-        {
-            return &data;
-        }
-        const _VTy *operator->( ) const
-        {
-            return &data;
         }
 
     private:
@@ -75,22 +67,13 @@ namespace trav
             return _next;
         }
 
-        _ETy &operator*( )
+        operator _ETy &( )
         {
             return _data;
         }
-        const _ETy &operator*( ) const
+        operator const _ETy &( ) const
         {
             return _data;
-        }
-
-        _ETy *operator->( )
-        {
-            return &_data;
-        }
-        const _ETy *operator->( ) const
-        {
-            return &_data;
         }
 
     private:
@@ -168,22 +151,19 @@ namespace trav
         class walker
         {
         public:
-            friend class walk_iterator;
-
-            class walk_iterator
+            walker(_In_ graph &g, _In_ size_t rootIndex)
+                : g(g), rootIndex(rootIndex)
             {
-            public:
-                friend class walker;
+                std::queue<size_t> q;
+                std::unordered_set<size_t> visited;
 
-                bool operator!=(const walk_iterator &other)
+                vert *root = g.verts[rootIndex];
+                visited.insert(rootIndex);
+                q.push(rootIndex);
+                _push_to_walk(nullptr, root);
+
+                while (!q.empty())
                 {
-                    return &_walker != &other._walker || q.empty( ) != other.q.empty( );
-                }
-
-                walk_iterator &operator++( )
-                {
-                    graph &g = _walker.g;
-
                     const size_t vIndex = q.front( );
                     const vert *v = g.verts[vIndex];
                     q.pop( );
@@ -193,67 +173,42 @@ namespace trav
                         for (const size_t eIndex : v->adj)
                         {
                             edge *e = g.edges[eIndex];
-                            bool isForward = e->prev() == vIndex;
-                            const size_t wIndex = isForward ? e->next() : e->prev();
+                            bool isForward = e->prev( ) == vIndex;
+                            const size_t wIndex = isForward ? e->next( ) : e->prev( );
                             vert *w = g.verts[wIndex];
 
-                            if (isForward == (dir == direction::FORWARD) && !visited.contains(wIndex))
+                            if (isForward != (dir == direction::FORWARD)) continue;
+
+                            if (!visited.contains(wIndex))
                             {
                                 visited.insert(wIndex);
                                 q.push(wIndex);
-                                _vert = w;
-                                _edge = e;
+                                _push_to_walk(e, w);
                             }
                         }
                     }
-                    return *this;
                 }
-
-                std::tuple<vert *, edge *> operator*( ) const
-                {
-                    return { _vert, _edge };
-                }
-
-            private:
-                walk_iterator(
-                    walker &_walker,
-                    vert *_vert,
-                    size_t root)
-                    : _walker(_walker), _vert(_vert), _edge(nullptr), q(), visited(root)
-                {
-                    q.push(root); // w h y
-                }
-
-                walk_iterator(walker &_walker)
-                    : _walker(_walker), _vert(nullptr), _edge(nullptr), q(), visited()
-                { }
-
-                walker &_walker;
-                vert *_vert;
-                edge *_edge;
-                std::queue<size_t> q;
-                std::unordered_set<size_t> visited;
-            };
-
-            walk_iterator begin( )
-            {
-                walk_iterator it(*this, g.verts[rootIndex], rootIndex);
-                return it;
             }
 
-            walk_iterator end( )
+            auto begin( ) const
             {
-                walk_iterator it(*this);
-                return it;
+                return _walk.begin( );
             }
 
-            walker(_In_ graph &g, _In_ size_t rootIndex)
-                : g(g), rootIndex(rootIndex)
-            { }
+            auto end( ) const
+            {
+                return _walk.end( );
+            }
 
         private:
+            void _push_to_walk(_In_opt_ edge *e, _In_ vert *v)
+            {
+                _walk.push_back(std::tuple<edge *, vert &>{ e, *v });
+            }
+
             graph &g;
             size_t rootIndex;
+            std::vector<std::tuple<edge *, vert &>> _walk;
         };
 
         template<traversal kind, direction dir = FORWARD>
