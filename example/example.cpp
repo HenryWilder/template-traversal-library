@@ -13,7 +13,7 @@ int main()
 		g.push("v2");
 		g.link(0, 2);
 		g.push("v3");
-		g.link(1, 5);
+		g.link(1, 3);
 		g.link(2, 3);
 
 		// BFS
@@ -26,7 +26,7 @@ int main()
 
 		// DFS
 		// Expected: v0 v1 v3 v2
-		for (auto &[e, v] : g.walk_dfs(1))
+		for (auto &[e, v] : g.walk_dfs(0))
 		{
 			std::cout << v << ' ';
 		}
