@@ -1,14 +1,11 @@
 #pragma once
 #include <type_traits>
 #include <cassert>
+#include <unordered_set>
 #include <queue>
 #include <stack>
 #include <vector>
-#include <functional>
 #include <tuple>
-#include <optional>
-
-#define _In_vector_index_(vec) _In_range_(0, vec.size( ) - 1)
 
 // graph traversal
 namespace trav
@@ -16,73 +13,91 @@ namespace trav
     template<class _Ty>
     concept non_void = !std::is_void_v<_Ty>;
 
-    template<class _VTy>
+    template<class T, class... TN>
+    concept one_type_of = std::disjunction_v<std::is_same<T, TN>...>;
+
+    template<class _VTy, class _ETy = void> class vert;
+    template<class _VTy, class _ETy = void> class edge;
+
+    template<class _VTy, class _ETy>
     class vert
     {
     public:
+        using edge = edge<_VTy, _ETy>;
+
         vert(
-            _In_ size_t index,
             _In_ const _VTy &data
             ) :
-            _index(index),
             _data(data)
         { }
 
-        size_t index( ) const { return _index; }
-
-        using edge_container = std::vector<size_t>;
-
-              edge_container &prev( )       { return _prev; }
-        const edge_container &prev( ) const { return _prev; }
-              edge_container &next( )       { return _next; }
-        const edge_container &next( ) const { return _next; }
+              std::vector<edge *> &prev( )       { return _prev; }
+        const std::vector<edge *> &prev( ) const { return _prev; }
+              std::vector<edge *> &next( )       { return _next; }
+        const std::vector<edge *> &next( ) const { return _next; }
 
         operator       _VTy &( )       { return _data; }
         operator const _VTy &( ) const { return _data; }
 
     private:
-        size_t _index; // verts
-        edge_container _prev, _next; // edges
+        std::vector<edge *> _prev, _next;
         _VTy _data;
     };
 
-    template<class _ETy = void> class edge;
-
-    template<>
-    class edge<void>
+    namespace
     {
+        template<class _VTy, class _ETy = void>
+        class _edge_base
+        {
+        public:
+            using vert = vert<_VTy, _ETy>;
+
+            _edge_base(
+                _In_ vert *prev,
+                _In_ vert *next
+                ) :
+                _prev(prev),
+                _next(next)
+            { }
+
+            vert *prev( ) const { return _prev; }
+            vert *next( ) const { return _next; }
+
+        private:
+            vert *_prev, *_next;
+        };
+    }
+
+    template<class _VTy>
+    class edge<_VTy, void>
+        : public _edge_base<_VTy, void>
+    {
+        using base = _edge_base<_VTy, void>;
     public:
+        using vert = base::vert;
+
         edge(
-            _In_ size_t index,
-            _In_ size_t prev,
-            _In_ size_t next
+            _In_ vert *prev,
+            _In_ vert *next
             ) :
-            _index(index),
-            _prev(prev),
-            _next(next)
+            base(prev, next)
         { }
-
-        size_t index( ) const { return _index; }
-        size_t prev ( ) const { return _prev;  }
-        size_t next ( ) const { return _next;  }
-
-    private:
-        size_t _index; // edges
-        size_t _prev, _next; // verts
     };
 
-    template<non_void _ETy>
-    class edge<_ETy>
-        : public edge<void>
+    template<class _VTy, non_void _ETy>
+    class edge<_VTy, _ETy>
+        : public _edge_base<_VTy, _ETy>
     {
+        using base = _edge_base<_VTy, _ETy>;
     public:
+        using vert = base::vert;
+
         edge(
-            _In_ size_t index,
-            _In_ size_t prev,
-            _In_ size_t next,
-            _In_ const _ETy &data
+            _In_ vert *prev,
+            _In_ vert *next,
+            _In_ _ETy data
             ) :
-            edge<void>(index, prev, next),
+            base(prev, next),
             _data(data)
         { }
 
@@ -93,18 +108,14 @@ namespace trav
         _ETy _data;
     };
 
-    enum class traversal { BREADTH_FIRST, DEPTH_FIRST, };
-
-    enum class direction { BACKWARD, FORWARD, };
-
     namespace
     {
         template<class _VTy, class _ETy = void>
         class _graph_base
         {
         public:
-            using vert = vert<_VTy>;
-            using edge = edge<_ETy>;
+            using vert = vert<_VTy, _ETy>;
+            using edge = edge<_VTy, _ETy>;
 
             ~_graph_base( )
             {
@@ -116,18 +127,18 @@ namespace trav
                 _In_ const _VTy &value
             )
             {
-                verts.push_back(new vert(verts.size( ), value));
+                verts.push_back(new vert(value));
             }
 
             vert &at(
-                _In_vector_index_(verts) size_t index
+                _In_range_(0, vert_count()) size_t index
             )
             {
                 return *verts[index];
             }
 
             const vert &at(
-                _In_vector_index_(verts) size_t index
+                _In_range_(0, vert_count()) size_t index
             ) const
             {
                 return *verts[index];
@@ -135,64 +146,67 @@ namespace trav
 
         protected:
             void _link(
-                _In_ size_t prev,
-                _In_ size_t next,
-                _In_ edge *_edge
+                _In_ vert *prev,
+                _In_ vert *next,
+                _In_ edge *e
             )
             {
-                assert(prev < this->verts.size( ));
-                assert(next < this->verts.size( ));
                 assert(prev != next);
 
-                size_t newEdgeIndex = edges.size( );
-                verts[prev]->next( ).push_back(newEdgeIndex);
-                verts[next]->prev( ).push_back(newEdgeIndex);
-                edges.push_back(_edge);
+                edges.push_back(e);
+                prev->next( ).push_back(e);
+                next->prev( ).push_back(e);
             }
 
         public:
             edge &edge_at(
-                _In_vector_index_(edges) size_t index
+                _In_range_(0, edge_count()) size_t index
             )
             {
                 return *edges[index];
             }
 
             const edge &edge_at(
-                _In_vector_index_(edges) size_t index
+                _In_range_(0, edge_count()) size_t index
             ) const
             {
                 return *edges[index];
             }
 
             _Ret_maybenull_ edge *edge_connecting(
-                _In_vector_index_(verts) size_t from_vert,
-                _In_vector_index_(verts) size_t   to_vert
+                _In_ const vert *from_vert,
+                _In_ const vert *  to_vert
             )
             {
-                auto &from_vert_edges = verts[from_vert]->next( );
-                auto &to_vert_edges = verts[to_vert]->prev( );
+                auto &from_vert_edges = from_vert->next( );
+                auto &  to_vert_edges =   to_vert->prev( );
 
                 if (from_vert_edges.size( ) < to_vert_edges.size( ))
                 {
                     // Look for 'to' in 'from'
-                    for (size_t edgeIndex : from_vert_edges)
+                    for (edge *e : from_vert_edges)
                     {
-                        edge *e = edges[edgeIndex];
                         if (e->next( ) == to_vert) return e;
                     }
                 }
                 else
                 {
                     // Look for 'from' in 'to'
-                    for (size_t edgeIndex : to_vert_edges)
+                    for (edge *e : to_vert_edges)
                     {
-                        edge *e = edges[edgeIndex];
                         if (e->prev( ) == from_vert) return e;
                     }
                 }
 
                 return nullptr;
+            }
+
+            _Ret_maybenull_ edge *edge_connecting(
+                _In_ size_t from_vert_index,
+                _In_ size_t   to_vert_index
+            )
+            {
+                return edge_connecting(verts[from_vert_index], verts[to_vert_index]);
             }
 
         private:
@@ -215,145 +229,188 @@ namespace trav
                 std::vector<std::tuple<edge *, vert &>> steps;
             };
 
-        public:
-            template<traversal kind, direction dir> class walk;
+            class _step_forward
+            {
+            public:
+                static const std::vector<edge *> &step(_In_ const vert *v) { return v->next( ); }
+                static                   vert *   step(_In_ const edge *e) { return e->next( ); }
+            };
+
+            class _step_backward
+            {
+            public:
+                static const std::vector<edge *> &step(_In_ const vert *v) { return v->prev( ); }
+                static                   vert *   step(_In_ const edge *e) { return e->prev( ); }
+            };
 
             // see https://en.wikipedia.org/wiki/Breadth-first_search
-            // (skips 7 and 8 because there is no goal)
-            // (skips 12 because parents are already known)
-            //  1  procedure BFS(G, root) is
-            //  2      let Q be a queue
-            //  3      label root as explored
-            //  4      Q.enqueue(root)
-            //  5      while Q is not empty do
-            //  6          v := Q.dequeue()
-            //  9          for all edges from v to w in G.adjacentEdges(v) do
-            // 10              if w is not labeled as explored then
-            // 11                  label w as explored
-            // 13                  Q.enqueue(w)
-            template<direction dir>
-            class walk<traversal::BREADTH_FIRST, dir>
-                : public _walk
+            template<one_type_of<_step_forward, _step_backward> _stepper>
+            class _walk_bfs
+                : public _walk, public _stepper
             {
-                static constexpr bool is_traversal_forward = dir == direction::FORWARD;
-
-            public:
-                // 1  procedure BFS(G, root) is
-                walk(
-                    _In_ _graph_base &g,
-                    _In_ std::initializer_list<size_t> rootIndices
-                )
+            private:
+                void handle_root(
+                    _In_ std::queue<vert *> &q,
+                    _In_ std::unordered_set<vert *> &visited,
+                    _In_ vert *root)
                 {
-                    // 2  let Q be a queue
-                    std::queue<size_t> q;
-                    std::vector<bool> visited(g.verts.size( ), false);
+                    // 3  label root as explored
+                    visited.insert(root);
 
-                    // All roots at breadth 0
-                    for (size_t rootIndex : rootIndices)
-                    {
-                        // 3  label root as explored
-                        visited[rootIndex] = true;
+                    // 4  Q.enqueue(root)
+                    q.push(root);
+                    this->_push_step(nullptr, root);
+                }
 
-                        // 4  Q.enqueue(root)
-                        q.push(rootIndex);
-                        this->_push_step(nullptr, g.verts[rootIndex]);
-                    }
-
+                void handle_walk(
+                    _In_ std::queue<vert *> &q,
+                    _In_ std::unordered_set<vert *> &visited)
+                {
                     // 5  while Q is not empty do
                     while (!q.empty( ))
                     {
                         // 6  v := Q.dequeue()
-                        const size_t vIndex = q.front( );
-                        const vert *const v = g.verts[vIndex];
-                        q.pop( );
+                        const vert *const v = q.front( ); q.pop( );
 
                         // 9  for all edges from v to w in G.adjacentEdges(v) do
-                        for (const size_t eIndex : (is_traversal_forward ? v->next( ) : v->prev( )))
+                        for (edge *const e : _stepper::step(v))
                         {
-                            edge *const e = g.edges[eIndex];
-                            const size_t wIndex = (is_traversal_forward ? e->next( ) : e->prev( ));
+                            vert *const w = _stepper::step(e);
 
                             // 10  if w is not labeled as explored then
-                            if (!visited[wIndex])
+                            if (!visited.contains(w))
                             {
                                 // 11  label w as explored
-                                visited[wIndex] = true;
+                                visited.insert(w);
 
                                 // 13  Q.enqueue(w)
-                                q.push(wIndex);
-                                this->_push_step(e, g.verts[wIndex]);
+                                q.push(w);
+                                this->_push_step(e, w);
                             }
                         }
                     }
                 }
+
+            public:
+                // 1  procedure BFS(G, root) is
+                _walk_bfs(
+                    _In_ const _graph_base &g,
+                    _In_ std::vector<vert *> roots
+                )
+                {
+                    // 2  let Q be a queue
+                    std::queue<vert *> q;
+                    std::unordered_set<vert *> visited;
+
+                    // All roots at breadth 0
+                    for (vert *root : roots)
+                    {
+                        handle_root(q, visited, root);
+                    }
+
+                    handle_walk(q, visited);
+                }
+
+                // 1  procedure BFS(G, root) is
+                _walk_bfs(
+                    _In_ const _graph_base &g,
+                    _In_ vert *root
+                )
+                {
+                    // 2  let Q be a queue
+                    std::queue<vert *> q;
+                    std::unordered_set<vert *> visited;
+
+                    handle_root(q, visited, root);
+                    handle_walk(q, visited);
+                }
             };
 
             // see https://en.wikipedia.org/wiki/Depth-first_search
-            // 1  procedure DFS(G, v) is
-            // 2  label v as discovered
-            // 3      for all directed edges from v to w that are in G.adjacentEdges(v) do
-            // 4          if vertex w is not labeled as discovered then
-            // 5              recursively call DFS(G, w)
-            template<direction dir>
-            class walk<traversal::DEPTH_FIRST, dir>
-                : public _walk
+            template<one_type_of<_step_forward, _step_backward> _stepper>
+            class _walk_dfs
+                : public _walk, public _stepper
             {
-                static constexpr bool is_traversal_forward = dir == direction::FORWARD;
-
             private:
                 // 1  procedure DFS_iterative(G, v) is
                 void _walk_util(
-                    _In_ _graph_base &g,
-                    _Inout_ std::vector<bool> &visited,
+                    _In_ const _graph_base &g,
+                    _Inout_ std::unordered_set<vert *> &visited,
                     _In_opt_ edge *eTaken,
-                    _In_ size_t vIndex)
+                    _In_ vert *v)
                 {
-                    vert *const v = g.verts[vIndex];
-
                     // 2  label v as discovered
-                    visited[vIndex] = true;
-                    this->_push_step(eTaken, g.verts[vIndex]);
+                    visited.insert(v);
+                    this->_push_step(eTaken, v);
 
                     // 3  for all directed edges from v to w that are in G.adjacentEdges(v) do
-                    for (const size_t eIndex : (is_traversal_forward ? v->next( ) : v->prev( )))
+                    for (edge *const e : _stepper::step(v))
                     {
-                        edge *const e = g.edges[eIndex];
-                        const size_t wIndex = (is_traversal_forward ? e->next( ) : e->prev( ));
+                        vert *const w = _stepper::step(e);
 
                         // 4  if vertex w is not labeled as discovered then
-                        if (!visited[wIndex])
+                        if (!visited.contains(w))
                         {
                             // 5  recursively call DFS(G, w)
-                            _walk_util(g, visited, e, wIndex);
+                            _walk_util(g, visited, e, w);
                         }
                     }
 
                 }
 
             public:
-                walk(
-                    _In_ _graph_base &g,
-                    _In_ std::initializer_list<size_t> rootIndices
+                _walk_dfs(
+                    _In_ const _graph_base &g,
+                    _In_ std::vector<vert *> roots
                 )
                 {
-                    std::vector<bool> visited(g.verts.size( ), false);
+                    std::unordered_set<vert *> visited;
 
-                    for (const size_t rootIndex : rootIndices)
+                    for (vert *const root : roots)
                     {
-                        _walk_util(g, visited, nullptr, rootIndex);
+                        _walk_util(g, visited, nullptr, root);
                     }
+                }
+
+                _walk_dfs(
+                    _In_ const _graph_base &g,
+                    _In_ vert *root
+                )
+                {
+                    std::unordered_set<vert *> visited;
+
+                    _walk_util(g, visited, nullptr, root);
                 }
             };
 
-            auto walk_bfs  (_In_ std::initializer_list<size_t> roots) { return walk<traversal::BREADTH_FIRST, direction:: FORWARD>(*this, roots); }
-            auto walk_bfs_r(_In_ std::initializer_list<size_t> roots) { return walk<traversal::BREADTH_FIRST, direction::BACKWARD>(*this, roots); }
-            auto walk_dfs  (_In_ std::initializer_list<size_t> roots) { return walk<traversal::  DEPTH_FIRST, direction:: FORWARD>(*this, roots); }
-            auto walk_dfs_r(_In_ std::initializer_list<size_t> roots) { return walk<traversal::  DEPTH_FIRST, direction::BACKWARD>(*this, roots); }
+            using _walk_bfs_f = _walk_bfs<_step_forward >;
+            using _walk_bfs_r = _walk_bfs<_step_backward>;
+            using _walk_dfs_f = _walk_dfs<_step_forward >;
+            using _walk_dfs_r = _walk_dfs<_step_backward>;
+
+        public:
+            _walk_bfs_f walk_bfs  (_In_ std::vector<vert *> roots) { return _walk_bfs_f(*this, roots); }
+            _walk_bfs_r walk_bfs_r(_In_ std::vector<vert *> roots) { return _walk_bfs_r(*this, roots); }
+            _walk_dfs_f walk_dfs  (_In_ std::vector<vert *> roots) { return _walk_dfs_f(*this, roots); }
+            _walk_dfs_r walk_dfs_r(_In_ std::vector<vert *> roots) { return _walk_dfs_r(*this, roots); }
     
-            auto walk_bfs  (_In_vector_index_(verts) size_t root) { return walk_bfs  ({ root }); }
-            auto walk_bfs_r(_In_vector_index_(verts) size_t root) { return walk_bfs_r({ root }); }
-            auto walk_dfs  (_In_vector_index_(verts) size_t root) { return walk_dfs  ({ root }); }
-            auto walk_dfs_r(_In_vector_index_(verts) size_t root) { return walk_dfs_r({ root }); }
+            _walk_bfs_f walk_bfs  (_In_ vert *root) { return _walk_bfs_f(*this, root); }
+            _walk_bfs_r walk_bfs_r(_In_ vert *root) { return _walk_bfs_r(*this, root); }
+            _walk_dfs_f walk_dfs  (_In_ vert *root) { return _walk_dfs_f(*this, root); }
+            _walk_dfs_r walk_dfs_r(_In_ vert *root) { return _walk_dfs_r(*this, root); }
+    
+            _walk_bfs_f walk_bfs  (_In_ vert &root) { return walk_bfs  (&root); }
+            _walk_bfs_r walk_bfs_r(_In_ vert &root) { return walk_bfs_r(&root); }
+            _walk_dfs_f walk_dfs  (_In_ vert &root) { return walk_dfs  (&root); }
+            _walk_dfs_r walk_dfs_r(_In_ vert &root) { return walk_dfs_r(&root); }
+    
+            template<std::integral T> _walk_bfs_f walk_bfs  (_In_range_(0, vert_count()) T root_index) { return walk_bfs  (at(root_index)); }
+            template<std::integral T> _walk_bfs_r walk_bfs_r(_In_range_(0, vert_count()) T root_index) { return walk_bfs_r(at(root_index)); }
+            template<std::integral T> _walk_dfs_f walk_dfs  (_In_range_(0, vert_count()) T root_index) { return walk_dfs  (at(root_index)); }
+            template<std::integral T> _walk_dfs_r walk_dfs_r(_In_range_(0, vert_count()) T root_index) { return walk_dfs_r(at(root_index)); }
+
+            size_t vert_count() const { return verts.size(); }
+            size_t edge_count() const { return edges.size(); }
 
         protected:
             std::vector<vert *> verts;
@@ -367,13 +424,36 @@ namespace trav
     class graph<_VTy, void>
         : public _graph_base<_VTy, void>
     {
+        using base = _graph_base<_VTy, void>;
     public:
+        using vert = base::vert;
+        using edge = base::edge;
+
         void link(
-            _In_ size_t prev,
-            _In_ size_t next
+            _In_ vert *prev,
+            _In_ vert *next
         )
         {
-            this->_link(prev, next, new edge<void>(this->edges.size( ), prev, next));
+            this->_link(prev, next, new edge(prev, next));
+        }
+
+        void link(
+            _In_ vert &prev,
+            _In_ vert &next
+        )
+        {
+            link(&prev, &next);
+        }
+
+        template<std::integral T>
+        void link(
+            _In_range_(0, this->vert_count()) T prev,
+            _In_range_(0, this->vert_count()) T next
+        )
+        {
+            assert(prev < this->vert_count( ));
+            assert(next < this->vert_count( ));
+            link(this->verts[prev], this->verts[next]);
         }
     };
 
@@ -381,16 +461,39 @@ namespace trav
     class graph<_VTy, _ETy>
         : public _graph_base<_VTy, _ETy>
     {
+        using base = _graph_base<_VTy, void>;
     public:
+        using vert = base::vert;
+        using edge = base::edge;
+
         void link(
-            _In_ size_t prev,
-            _In_ size_t next,
+            _In_ vert *prev,
+            _In_ vert *next,
             _In_ const _ETy &value
         )
         {
-            this->_link(prev, next, new edge<_ETy>(this->edges.size(), prev, next, value));
+            this->_link(prev, next, new edge(prev, next, value));
+        }
+
+        void link(
+            _In_ vert &prev,
+            _In_ vert &next,
+            _In_ const _ETy &value
+        )
+        {
+            link(&prev, &next, value);
+        }
+
+        template<std::integral T>
+        void link(
+            _In_range_(0, this->vert_count()) T prev,
+            _In_range_(0, this->vert_count()) T next,
+            _In_ const _ETy &value
+        )
+        {
+            assert(prev < this->vert_count( ));
+            assert(next < this->vert_count( ));
+            link(this->verts[prev], this->verts[next], value);
         }
     };
 }
-
-#undef _In_vector_index_
