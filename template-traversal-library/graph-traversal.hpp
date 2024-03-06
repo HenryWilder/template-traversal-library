@@ -24,19 +24,10 @@ namespace trav
             : index(index), data(data)
         { }
 
-        size_t GetIndex( ) const
-        {
-            return index;
-        }
+        size_t GetIndex( ) const { return index; }
 
-        operator _VTy &( )
-        {
-            return data;
-        }
-        operator const _VTy &( ) const
-        {
-            return data;
-        }
+        operator       _VTy &( )       { return data; }
+        operator const _VTy &( ) const { return data; }
 
     private:
         size_t index;
@@ -54,44 +45,21 @@ namespace trav
             : _index(index), _prev(prev), _next(next), _data(data)
         { }
 
-        size_t index( ) const
-        {
-            return _index;
-        }
-        size_t prev( ) const
-        {
-            return _prev;
-        }
-        size_t next( ) const
-        {
-            return _next;
-        }
+        size_t index( ) const { return _index; }
+        size_t prev ( ) const { return _prev;  }
+        size_t next ( ) const { return _next;  }
 
-        operator _ETy &( )
-        {
-            return _data;
-        }
-        operator const _ETy &( ) const
-        {
-            return _data;
-        }
+        operator       _ETy &( )       { return _data; }
+        operator const _ETy &( ) const { return _data; }
 
     private:
         size_t _index, _prev, _next;
         _ETy _data;
     };
 
-    enum traversal
-    {
-        BREADTH_FIRST,
-        DEPTH_FIRST,
-    };
+    enum class traversal { BREADTH_FIRST, DEPTH_FIRST, };
 
-    enum direction
-    {
-        BACKWARD,
-        FORWARD,
-    };
+    enum class direction { BACKWARD, FORWARD, };
 
     template<class _VTy, class _ETy>
     class graph
@@ -211,16 +179,16 @@ namespace trav
             std::vector<std::tuple<edge *, vert &>> _walk;
         };
 
-        template<traversal kind, direction dir = FORWARD>
+        template<traversal kind, direction dir = direction::FORWARD>
         walker<kind, dir> walk(_In_ size_t root)
         {
             return walker<kind, dir>(*this, root);
         }
 
-        auto walk_bfs  (_In_ size_t root) { return walk<BREADTH_FIRST, FORWARD >(root); }
-        auto walk_bfs_r(_In_ size_t root) { return walk<BREADTH_FIRST, BACKWARD>(root); }
-        auto walk_dfs  (_In_ size_t root) { return walk<  DEPTH_FIRST, FORWARD >(root); }
-        auto walk_dfs_r(_In_ size_t root) { return walk<  DEPTH_FIRST, BACKWARD>(root); }
+        auto walk_bfs  (_In_ size_t root) { return walk<traversal::BREADTH_FIRST, direction:: FORWARD>(root); }
+        auto walk_bfs_r(_In_ size_t root) { return walk<traversal::BREADTH_FIRST, direction::BACKWARD>(root); }
+        auto walk_dfs  (_In_ size_t root) { return walk<traversal::  DEPTH_FIRST, direction:: FORWARD>(root); }
+        auto walk_dfs_r(_In_ size_t root) { return walk<traversal::  DEPTH_FIRST, direction::BACKWARD>(root); }
 
     protected:
         std::vector<vert *> verts;
