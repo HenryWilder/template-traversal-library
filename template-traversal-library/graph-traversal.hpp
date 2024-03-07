@@ -3,10 +3,8 @@
 #include <cassert>
 #include <unordered_set>
 #include <queue>
-#include <stack>
 #include <vector>
 #include <tuple>
-#include <functional>
 
 // graph traversal
 namespace trav
