@@ -1,4 +1,5 @@
 #include <iostream>
+#include <algorithm>
 #include <graph-traversal.hpp>
 
 using namespace trav;
@@ -6,15 +7,23 @@ using namespace trav;
 int main()
 {
 	{
-		graph<const char *> g;
+		graph<const char *, char> g;
 		g.push("v0");
 		g.push("v1");
-		g.link(0, 1);
+		g.link(0, 1, 'a');
 		g.push("v2");
-		g.link(0, 2);
+		g.link(0, 2, 'b');
 		g.push("v3");
-		g.link(1, 3);
-		g.link(2, 3);
+		g.link(1, 3, 'c');
+		g.link(2, 3, 'd');
+
+		if (g.at(2).bypassable())
+		{
+			g.bypass(2, +[ ](const decltype(g)::bypass_combine_params &data)
+			{
+				return data.edge_prev;
+			});
+		}
 
 		// BFS
 		// Expected: v0 v1 v2 v3

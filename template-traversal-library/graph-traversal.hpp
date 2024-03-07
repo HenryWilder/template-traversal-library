@@ -6,6 +6,7 @@
 #include <stack>
 #include <vector>
 #include <tuple>
+#include <functional>
 
 // graph traversal
 namespace trav
@@ -35,6 +36,15 @@ namespace trav
         const std::vector<edge *> &prev( ) const { return _prev; }
               std::vector<edge *> &next( )       { return _next; }
         const std::vector<edge *> &next( ) const { return _next; }
+
+        size_t prev_count() const { return _prev.size(); }
+        size_t next_count() const { return _next.size(); }
+
+        bool bypassable( ) const
+        {
+            size_t numPrev = _prev.size( ), numNext = _next.size( );
+            return numPrev == 1ull || numNext == 1ull || numPrev == numNext;
+        }
 
         operator       _VTy &( )       { return _data; }
         operator const _VTy &( ) const { return _data; }
@@ -131,14 +141,14 @@ namespace trav
             }
 
             vert &at(
-                _In_range_(0, vert_count()) size_t index
+                _In_range_(0, vert_count() - 1) size_t index
             )
             {
                 return *verts[index];
             }
 
             const vert &at(
-                _In_range_(0, vert_count()) size_t index
+                _In_range_(0, vert_count() - 1) size_t index
             ) const
             {
                 return *verts[index];
@@ -173,7 +183,7 @@ namespace trav
                 return *edges[index];
             }
 
-            _Ret_maybenull_ edge *edge_connecting(
+            _Ret_maybenull_ edge *edge_between(
                 _In_ const vert *from_vert,
                 _In_ const vert *  to_vert
             )
@@ -201,12 +211,137 @@ namespace trav
                 return nullptr;
             }
 
-            _Ret_maybenull_ edge *edge_connecting(
-                _In_ size_t from_vert_index,
-                _In_ size_t   to_vert_index
+            template<std::integral T>
+            _Ret_maybenull_ edge *edge_between(
+                _In_range_(0, vert_count()) T from_vert_index,
+                _In_range_(0, vert_count()) T   to_vert_index
             )
             {
-                return edge_connecting(verts[from_vert_index], verts[to_vert_index]);
+                return edge_between(verts[from_vert_index], verts[to_vert_index]);
+            }
+
+            void unlink(
+                _Inout_ vert *from_vert,
+                _Inout_ vert *to_vert,
+                _Inout_ _Post_invalid_ edge *between_edge
+            )
+            {
+                auto &from = from_vert->next( );
+                auto &to = to_vert->prev( );
+
+                auto edgesEnd = edges.end( );
+                auto it_full = std::find(edges.begin( ), edgesEnd, between_edge);
+
+                auto fromEnd = from.end( );
+                auto it_from = std::find(from.begin( ), fromEnd, between_edge);
+
+                auto toEnd = to.end( );
+                auto it_to = std::find(to.begin( ), toEnd, between_edge);
+
+                assert(it_full != edgesEnd);
+                assert(it_from != fromEnd);
+                assert(it_to != toEnd);
+
+                edges.erase(it_full);
+                from.erase(it_from);
+                to.erase(it_to);
+                delete between_edge;
+            }
+
+            void unlink(
+                _Inout_ vert *from_vert,
+                _Inout_ vert *  to_vert
+            )
+            {
+                unlink(from_vert, to_vert, edge_between(from_vert, to_vert));
+            }
+
+            template<std::integral T>
+            void unlink(
+                _In_range_(0, vert_count( )) T from_vert_index,
+                _In_range_(0, vert_count( )) T   to_vert_index
+            )
+            {
+                unlink(&at(static_cast<size_t>(from_vert_index)), &at(static_cast<size_t>(to_vert_index)));
+            }
+
+            void erase(
+                _In_ _Post_invalid_ vert *erase_vert
+            )
+            {
+                for (edge *e : erase_vert->prev( ))
+                {
+                    vert *v = e->prev( );
+                    auto &next = v->next( );
+                    next.erase(std::find(next.begin( ), next.end( ), e));
+                    delete e;
+                }
+                for (edge *e : erase_vert->next( ))
+                {
+                    vert *v = e->next( );
+                    auto &prev = v->prev( );
+                    prev.erase(std::find(prev.begin( ), prev.end( ), e));
+                    delete e;
+                }
+                delete erase_vert;
+            }
+
+            template<std::integral T>
+            void erase(
+                _In_range_(0, vert_count( )) T erase_vert_index
+            )
+            {
+                erase(&at(static_cast<size_t>(erase_vert_index)));
+            }
+
+        protected:
+            // removes links but doesn't destroy the vertex
+            template<class _Fn = decltype([ ](vert *, edge *, vert *, edge *, vert *){ })>
+            void _bypass(
+                _Inout_ vert *bypass_vert,
+                _In_ _Fn _apply_linkage
+            )
+            {
+                // bypassing n<1<n --> n<1<n is undefined.
+                // bypassing n --> n is defined, but may be unpredictable if edges aren't ordered.
+                assert(bypass_vert->bypassable( ));
+
+                auto &prev = bypass_vert->prev( );
+                auto &next = bypass_vert->next( );
+
+                size_t num_prev = prev.size( );
+                size_t num_next = next.size( );
+                size_t num_more = std::max(num_prev, num_next);
+
+                for (size_t i = 0; i < num_more; ++i)
+                {
+                    size_t p_index = std::min(i, num_prev - 1);
+                    size_t n_index = std::min(i, num_next - 1);
+
+                    if (num_prev < num_next)
+                    {
+                        assert(p_index == 0);
+                        assert(n_index == i);
+                    }
+                    else if (num_prev > num_next)
+                    {
+                        assert(p_index == i);
+                        assert(n_index == 0);
+                    }
+                    else // num_prev == num_next
+                    {
+                        assert(p_index == i);
+                        assert(n_index == i);
+                    }
+
+                    edge *pe = prev.at(p_index);
+                    edge *ne = next.at(n_index);
+                    vert *p = pe->prev( );
+                    vert *n = ne->next( );
+                    this->unlink(p, bypass_vert, pe);
+                    this->unlink(bypass_vert, n, ne);
+                    _apply_linkage(p, pe, bypass_vert, ne, n);
+                }
             }
 
         private:
@@ -455,13 +590,34 @@ namespace trav
             assert(next < this->vert_count( ));
             link(this->verts[prev], this->verts[next]);
         }
+
+        // removes links but doesn't destroy the vertex
+        void bypass(
+            _Inout_ vert *bypass_vert
+        )
+        {
+            auto apply_linkage = [this](vert *pv, edge *, vert *, edge *, vert *nv)
+            {
+                this->link(pv, nv);
+            };
+            this->_bypass<decltype(apply_linkage)>(bypass_vert, apply_linkage);
+        }
+
+        // removes links but doesn't destroy the vertex
+        template<std::integral T>
+        void bypass(
+            _In_ T bypass_vert_index
+        )
+        {
+            bypass(&this->at(bypass_vert_index));
+        }
     };
 
     template<class _VTy, non_void _ETy>
     class graph<_VTy, _ETy>
         : public _graph_base<_VTy, _ETy>
     {
-        using base = _graph_base<_VTy, void>;
+        using base = _graph_base<_VTy, _ETy>;
     public:
         using vert = base::vert;
         using edge = base::edge;
@@ -494,6 +650,40 @@ namespace trav
             assert(prev < this->vert_count( ));
             assert(next < this->vert_count( ));
             link(this->verts[prev], this->verts[next], value);
+        }
+
+        struct bypass_combine_params
+        {
+            const _VTy &vert_prev;
+            const _ETy &edge_prev;
+            const _VTy &vert_bypassing;
+            const _ETy &edge_next;
+            const _VTy &vert_next;
+        };
+
+        // removes links but doesn't destroy the vertex
+        template<class _Fn>
+        void bypass(
+            _Inout_ vert *bypass_vert,
+            _In_ _Fn combine_func
+        )
+        {
+            auto apply_linkage = [&](vert *pv, edge *pe, vert *v, edge *ne, vert *nv)
+            {
+                _ETy data = combine_func(bypass_combine_params{ *pv, *pe, *v, *ne, *nv });
+                link(pv, nv, data);
+            };
+            this->_bypass(bypass_vert, apply_linkage);
+        }
+
+        // removes links but doesn't destroy the vertex
+        template<std::integral T, class _Fn>
+        void bypass(
+            _In_ T bypass_vert_index,
+            _In_ _Fn combine_func
+        )
+        {
+            bypass(&this->at(bypass_vert_index), combine_func);
         }
     };
 }
