@@ -572,256 +572,128 @@ namespace trav
     template<class _VTy, class _ETy>
     struct walk
     {
+        using forward = step_forward<_VTy, _ETy>;
+        using backward = step_backward<_VTy, _ETy>;
         using vert = vert<_VTy, _ETy>;
         using edge = edge<_VTy, _ETy>;
 
         using single_step = std::tuple<edge *, vert *>;
         using step_vector = std::vector<single_step>;
 
-    private:
+        using walk_func = step_vector(walk:: *)(_In_ const std::vector<const vert *> &);
+
         // see https://en.wikipedia.org/wiki/Breadth-first_search
+        // 1  procedure BFS(G, root) is
         template<stepper_class stepper>
-        class _walk_bfs
+        static step_vector bfs(_In_ const std::vector<const vert *> &roots)
         {
-        private:
-            void handle_root(
-                _In_ std::queue<vert *> &q,
-                _In_ std::unordered_set<vert *> &visited,
-                _In_ vert &root)
+            step_vector result;
+            std::unordered_set<const vert *> visited;
+
+            // 2  let Q be a queue
+            std::queue<const vert *> q;
+
+            for (const vert *root : roots)
             {
                 // 3  label root as explored
-                visited.insert(&root);
+                visited.insert(root);
 
                 // 4  Q.enqueue(root)
-                q.push(&root);
-                this->steps.emplace_back(nullptr, &root);
+                q.push(root);
+                result.emplace_back(nullptr, root);
             }
 
-            void handle_walk(
-                _In_ std::queue<vert *> &q,
-                _In_ std::unordered_set<vert *> &visited)
+            // 5  while Q is not empty do
+            while (!q.empty( ))
             {
-                // 5  while Q is not empty do
-                while (!q.empty( ))
+                // 6  v := Q.dequeue()
+                const vert *v = q.front( );
+                q.pop( );
+
+                // 9  for all edges from v to w in G.adjacentEdges(v) do
+                for (const edge *e : stepper::step(*v))
                 {
-                    // 6  v := Q.dequeue()
-                    const vert *const v = q.front( ); q.pop( );
+                    const vert &w = stepper::step(*e);
 
-                    // 9  for all edges from v to w in G.adjacentEdges(v) do
-                    for (edge *const e : stepper::step(v))
-                    {
-                        vert &w = stepper::step(e);
-
-                        // 10  if w is not labeled as explored then
-                        if (!visited.contains(&w))
-                        {
-                            // 11  label w as explored
-                            visited.insert(&w);
-
-                            // 13  Q.enqueue(w)
-                            q.push(&w);
-                            this->steps.emplace_back(&e, &w);
-                        }
-                    }
-                }
-            }
-
-        public:
-            // 1  procedure BFS(G, root) is
-            _walk_bfs(
-                _In_ std::vector<vert *> roots
-            )
-            {
-                // 2  let Q be a queue
-                std::queue<vert *> q;
-                std::unordered_set<vert *> visited;
-
-                // All roots at breadth 0
-                for (vert *root : roots)
-                {
-                    handle_root(q, visited, *root);
-                }
-
-                handle_walk(q, visited);
-            }
-
-            // 1  procedure BFS(G, root) is
-            _walk_bfs(
-                _In_ vert &root
-            )
-            {
-                // 2  let Q be a queue
-                std::queue<vert *> q;
-                std::unordered_set<vert *> visited;
-
-                handle_root(q, visited, root);
-                handle_walk(q, visited);
-            }
-        };
-
-        // see https://en.wikipedia.org/wiki/Depth-first_search
-        template<stepper_class stepper>
-        class _walk_dfs
-        {
-        private:
-            // 1  procedure DFS_iterative(G, v) is
-            void _walk_util(
-                _Inout_ step_vector &_steps,
-                _Inout_ std::unordered_set<vert *> &visited,
-                _In_opt_ edge *eTaken,
-                _In_ vert &v)
-            {
-                // 2  label v as discovered
-                visited.insert(&v);
-                _steps.emplace_back(eTaken, &v);
-
-                // 3  for all directed edges from v to w that are in G.adjacentEdges(v) do
-                for (edge *const e : stepper::step(v))
-                {
-                    vert &w = stepper::step(*e);
-
-                    // 4  if vertex w is not labeled as discovered then
+                    // 10  if w is not labeled as explored then
                     if (!visited.contains(&w))
                     {
-                        // 5  recursively call DFS(G, w)
-                        _walk_util(_steps, visited, e, w);
+                        // 11  label w as explored
+                        visited.insert(w);
+
+                        // 13  Q.enqueue(w)
+                        q.push(w);
+                        result.emplace_back(e, &w);
                     }
                 }
             }
 
-        public:
-            _walk_dfs(
-                _In_ std::vector<vert *> roots
-            )
-            {
-                size_t numRoots = roots.size( );
+            return result;
+        }
 
-                std::vector<std::unordered_set<vert *>> visitedVec;
-                visitedVec.reserve(numRoots);
+        static constexpr auto bfs_f = &bfs<forward>;
+        static constexpr auto bfs_r = &bfs<backward>;
 
-                std::vector<step_vector> stepsVec;
-                stepsVec.reserve(numRoots);
-
-                std::vector<std::thread> tasks;
-                tasks.reserve(numRoots);
-
-                for (size_t i = 0; i < numRoots; ++i)
-                {
-                    tasks.emplace_back(_walk_util, std::ref(stepsVec.at(i)), std::ref(visitedVec.at(i)), nullptr, *roots.at(i));
-                }
-
-                for (std::thread &task : tasks)
-                {
-                    task.join( );
-                }
-
-                // Combine steps
-
-                size_t totalSteps = 0;
-                for (const step_vector &s : stepsVec)
-                {
-                    totalSteps += s.size( );
-                }
-
-                this->steps.reserve(totalSteps);
-
-                for (const step_vector &s : stepsVec)
-                {
-                    this->steps.insert(this->steps.end( ), s.begin( ), s.end( ));
-                }
-            }
-
-            _walk_dfs(
-                _In_ vert &root
-            )
-            {
-                std::unordered_set<vert *> visited;
-
-                _walk_util(this->steps, visited, nullptr, root);
-            }
-        };
-    
-        // see https://en.wikipedia.org/wiki/Depth-first_search
+    private:
+        // 1  procedure DFS(G, v) is
         template<stepper_class stepper>
-        class _walk_dfs_stack
+        static step_vector _dfs_util(_Inout_ std::unordered_set<const vert *> &visited, _In_ const vert *v)
         {
-        private:
-            void _walk_route( )
+            // 2  label v as discovered
+            visited.insert(v);
+
+            // 3  for all directed edges from v to w that are in G.adjacentEdges(v) do
+            for (edge *e : stepper::step(v))
             {
+                const vert &w = stepper::step(e);
 
-            }
-
-        public:
-            // 1  procedure DFS_iterative(G, v) is
-            _walk_dfs_stack(
-                _In_ std::vector<vert *> roots
-            )
-            {
-                std::unordered_set<vert *> visited;
-
-                // 2  let S be a stack
-                std::stack<vert *> s;
-
-                // 3  S.push(v)
-                s.push( );
-
-                // 4  while S is not empty do
-            }
-
-            // 1  procedure DFS_iterative(G, v) is
-            _walk_dfs_stack(
-                _In_ vert &root
-            )
-            {
-                std::unordered_set<vert *> visited;
-
-                // 2  let S be a stack
-                std::stack<vert *> s;
-
-                // 3  S.push(v)
-                s.push(&root);
-                this->steps.emplace_back(nullptr, &root);
-
-                // 4  while S is not empty do
-                while (!s.empty( ))
+                // 4  if vertex w is not labeled as discovered then
+                if (visited.contains(v))
                 {
-                    // 5  v = S.pop()
-                    vert &v = *s.top( );
-                    s.pop( );
-
-                    // 6  if v is not labeled as discovered then
-                    if (!visited.contains(&v))
-                    {
-                        // 7  label v as discovered
-                        visited.insert(&v);
-
-                        // 8  for all edges from v to w in G.adjacentEdges(v) do 
-                        for (edge *const e : stepper::step(v))
-                        {
-                            vert &w = stepper::step(*e);
-
-                            // 9  S.push(w)
-                            s.push(w);
-                            this->steps.emplace_back(e, &w);
-                        }
-                    }
+                    // 5  recursively call DFS(G, w)
+                    _dfs_util(visited, w);
                 }
             }
-        };
+        }
 
     public:
-        auto walk_bfs        (_In_ std::vector<vert *> roots) { return _walk_bfs      <step_forward >(roots); }
-        auto walk_bfs_r      (_In_ std::vector<vert *> roots) { return _walk_bfs      <step_backward>(roots); }
-        auto walk_dfs        (_In_ std::vector<vert *> roots) { return _walk_dfs      <step_forward >(roots); }
-        auto walk_dfs_r      (_In_ std::vector<vert *> roots) { return _walk_dfs      <step_backward>(roots); }
-        auto walk_dfs_stack  (_In_ std::vector<vert *> roots) { return _walk_dfs_stack<step_forward >(roots); }
-        auto walk_dfs_stack_r(_In_ std::vector<vert *> roots) { return _walk_dfs_stack<step_backward>(roots); }
-    
-        auto walk_bfs        (_In_ vert &root) { return _walk_bfs      <step_forward >(root); }
-        auto walk_bfs_r      (_In_ vert &root) { return _walk_bfs      <step_backward>(root); }
-        auto walk_dfs        (_In_ vert &root) { return _walk_dfs      <step_forward >(root); }
-        auto walk_dfs_r      (_In_ vert &root) { return _walk_dfs      <step_backward>(root); }
-        auto walk_dfs_stack  (_In_ vert &root) { return _walk_dfs_stack<step_forward >(root); }
-        auto walk_dfs_stack_r(_In_ vert &root) { return _walk_dfs_stack<step_backward>(root); }
+        // see https://en.wikipedia.org/wiki/Depth-first_search
+        template<stepper_class stepper>
+        static step_vector dfs(_In_ const std::vector<const vert *> &roots)
+        {
+            step_vector result;
+            std::unordered_set<const vert *> visited;
+            for (const vert *root : roots)
+                _dfs_util<stepper>(result, visited, roots);
+            return result;
+        }
+
+        static constexpr auto dfs_f = &dfs<forward>;
+        static constexpr auto dfs_r = &dfs<backward>;
+
+        // see https://en.wikipedia.org/wiki/Depth-first_search
+        // 1  procedure DFS_iterative(G, v) is
+        template<stepper_class stepper>
+        static void dfs_stack(_Outref_ step_vector &result, _In_ const std::vector<const vert *> &roots)
+        {
+            // 2  let S be a stack
+            
+            // 3  S.push(v)
+            
+            // 4  while S is not empty do
+            
+            // 5  v = S.pop( )
+            
+            // 6  if v is not labeled as discovered then
+            
+            // 7  label v as discovered
+            
+            // 8  for all edges from v to w in G.adjacentEdges(v) do
+            
+            // 9  S.push(w)
+        }
+
+        static constexpr auto dfs_stack_f = &dfs_stack<forward>;
+        static constexpr auto dfs_stack_r = &dfs_stack<backward>;
     };
 }
